@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Settings — Vape of the Gods Elite</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --accent: #bfa15f; /* Refined subtle gold */
+      --accent-light: rgba(191, 161, 95, 0.2);
+    }
+
+    /* Global styles */
+    body {
+      margin: 0;
+      font-family: 'Orbitron', sans-serif;
+      background: radial-gradient(ellipse at center, #1a1a1a 0%, #0d0d0d 100%);
+      color: #fff;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Top header */
+    .top-header {
+      background: linear-gradient(to right, #333, #222);
+      padding: 20px;
+      font-size: 2rem;
+      font-weight: 800;
+      text-align: center;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      box-shadow: 0 0 25px var(--accent-light);
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Layout wrapper */
+    .layout {
+      display: flex;
+      height: calc(100vh - 80px);
+      z-index: 2;
+      position: relative;
+    }
+
+    /* Sidebar styling */
+    .sidebar {
+      width: 270px;
+      background-color: rgba(0, 0, 0, 0.7);
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 30px 20px;
+      box-shadow: inset -1px 0 20px var(--accent-light);
+    }
+    .sidebar ul {
+      list-style: none;
+      padding: 0;
+    }
+    .sidebar li {
+      margin-bottom: 20px;
+    }
+    .sidebar a,
+    .sidebar button {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-size: 15px;
+      color: var(--accent);
+      background-color: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(191, 161, 95, 0.2);
+      border-radius: 12px;
+      text-align: left;
+      text-decoration: none;
+      transition: all 0.3s ease;
+    }
+    .sidebar a:hover,
+    .sidebar button:hover {
+      background: rgba(191, 161, 95, 0.12);
+      color: #fff;
+      box-shadow: 0 0 18px rgba(191, 161, 95, 0.4);
+    }
+    a.active {
+      background: rgba(191, 161, 95, 0.12);
+      color: #fff;
+    }
+
+    /* Main content styling */
+    .content {
+      flex: 1;
+      padding: 50px 60px;
+      overflow-y: auto;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(191, 161, 95, 0.15);
+      border-radius: 25px;
+      padding: 40px;
+      box-shadow: 0 0 60px rgba(191, 161, 95, 0.05), 0 0 200px rgba(191, 161, 95, 0.08);
+      backdrop-filter: blur(12px);
+      text-align: center;
+    }
+    h2 {
+      font-size: 2.4rem;
+      color: var(--accent);
+      font-weight: 800;
+      margin-bottom: 20px;
+    }
+    p {
+      font-size: 1.2rem;
+    }
+
+    /* Rotating crown element for extra premium vibe */
+    .rotating-crown {
+      width: 50px;
+      height: 50px;
+      margin: 20px auto;
+      background-image: url('https://img.icons8.com/fluency/48/000000/crown.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      animation: rotateCrown 4s linear infinite;
+    }
+    @keyframes rotateCrown {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Header -->
+  <div class="top-header">
+    Vape of the Gods — Elite Settings
+  </div>
+
+  <!-- Layout -->
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <ul>
+        <li><a href="{{ url_for('home') }}">Dashboard</a></li>
+        <li><a href="{{ url_for('projects') }}">Projects</a></li>
+        <li><a href="{{ url_for('settings') }}" class="active">Settings</a></li>
+        <li>
+          <a href="{{ url_for('logout') }}" onclick="return confirm('Are you sure you want to logout?')">
+            Logout
+          </a>
+        </li>
+      </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content">
+      <div class="glass-card">
+        <div class="rotating-crown"></div>
+        <h2>Account Settings</h2>
+        <p>Update your preferences, change your password, or manage your profile here.</p>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

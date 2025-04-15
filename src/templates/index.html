@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enhanced Real-Time Voice App with AI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #121212;
+      color: #ffffff;
+    }
+    .container {
+      max-width: 600px;
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+      text-align: center;
+    }
+    .visualizer {
+      width: 100%;
+      height: 150px;
+      background-color: #333;
+      border-radius: 8px;
+    }
+    .header {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #ff9800;
+    }
+    .info-text {
+      font-size: 0.9rem;
+      color: #bbbbbb;
+    }
+    .btn-custom {
+      background-color: #ff9800;
+      border: none;
+      color: #fff;
+    }
+    .btn-custom:hover {
+      background-color: #e68900;
+    }
+  </style>
+</head>
+
+<body class="d-flex justify-content-center align-items-center vh-100">
+  <div class="container">
+    <h1 class="header mb-3">Enhanced Real-Time Voice App</h1>
+    <p class="info-text">Speak into your microphone or use Manager Instruction to refine AI bot responses.</p>
+
+    <button id="startButton" class="btn btn-custom mb-2">Start</button>
+    <button id="managerButton" class="btn btn-secondary mb-2">Manager Instruction</button>
+    <button id="stopBotButton" class="btn btn-danger mb-2">Stop AI Bot</button>
+    <button id="showHistoryButton" class="btn btn-info mb-2">Show History</button>
+    <button id="clearHistoryButton" class="btn btn-warning mb-2">Clear History</button>
+
+    <div class="mb-4">
+      <p><strong>Local Input (Blue):</strong></p>
+      <canvas id="localVisualizer" class="visualizer border"></canvas>
+    </div>
+    <div class="mb-4">
+      <p><strong>Remote Audio (Red):</strong></p>
+      <canvas id="backendVisualizer" class="visualizer border"></canvas>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let aiBotActive = true;
+    let pc = null;
+    let micStream = null;
+
+    // Overwrite console.error to show an alert and log details for debugging
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      originalConsoleError(...args);
+      alert(`See browser console for details: ${args.join(' ')}`);
+    };
+
+    // Start button: initiate WebRTC connection and get session token
+    document.getElementById("startButton").addEventListener("click", async () => {
+      if (!aiBotActive) {
+        alert("AI Bot is currently stopped.");
+        return;
+      }
+      try {
+        await init();
+      } catch (error) {
+        console.error("Error in init():", error);
+      }
+    });
+
+    // Manager Instruction button: capture voice and update prompt
+    document.getElementById("managerButton").addEventListener("click", () => {
+      aiBotActive = true;
+      listenAndSendToGPT();
+    });
+
+    // Stop AI Bot button
+    document.getElementById("stopBotButton").addEventListener("click", () => {
+  aiBotActive = false;
+  if (pc) {
+    pc.getSenders().forEach(sender => pc.removeTrack(sender));
+    pc.close();
+    pc = null;
+    console.log("Peer connection closed.");
+  }
+
+  if (micStream) {
+    micStream.getTracks().forEach(track => track.stop());
+    micStream = null;
+    console.log("Microphone stream stopped.");
+  }
+
+  alert("AI Bot Stopped and connection closed.");
+});
+
+    // Show History button: retrieve prompt and refined history
+    document.getElementById("showHistoryButton").addEventListener("click", async () => {
+      try {
+        const historyResponse = await fetch("/history");
+        if (!historyResponse.ok) {
+          throw new Error(`Failed to retrieve history. HTTP ${historyResponse.status}`);
+        }
+        const historyData = await historyResponse.json();
+        alert(`Prompt History:\n${historyData.prompt_history}\n\nRefined History:\n${historyData.refined_history}`);
+      } catch (error) {
+        console.error("Error retrieving history:", error);
+      }
+    });
+
+    // Clear History button: reset the prompt and refined history files
+    document.getElementById("clearHistoryButton").addEventListener("click", async () => {
+      try {
+        const clearResponse = await fetch("/reset_prompt", { method: 'POST' });
+        if (!clearResponse.ok) {
+          throw new Error(`Failed to clear history. HTTP ${clearResponse.status}`);
+        }
+        alert("Prompt instructions and refined history cleared.");
+      } catch (error) {
+        console.error("Error clearing history:", error);
+      }
+    });
+
+    // Main init function: sets up WebRTC with OpenAI realtime API
+    async function init() {
+  console.log("Init started...");
+  const tokenResponse = await fetch("/session");
+  if (!tokenResponse.ok) {
+    throw new Error(`Failed to get session token. HTTP status ${tokenResponse.status}`);
+  }
+  const tokenData = await tokenResponse.json();
+
+  const EPHEMERAL_KEY = tokenData.client_secret.value;
+  console.log("EPHEMERAL_KEY------", EPHEMERAL_KEY);
+
+  // 🔁 Store peer connection globally so it can be stopped later
+  pc = new RTCPeerConnection();
+  const audioEl = document.createElement("audio");
+  audioEl.autoplay = true;
+  document.body.appendChild(audioEl);
+
+  pc.ontrack = e => {
+    if (e.streams[0]) {
+      console.log("Received remote stream from OpenAI.");
+      audioEl.srcObject = e.streams[0];
+      startVisualizer(e.streams[0], 'backendVisualizer', '#ff0000');
+    }
+  };
+
+  console.log("Requesting microphone permission...");
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  pc.addTrack(micStream.getTracks()[0]);
+  console.log("Microphone acquired.");
+  startVisualizer(micStream, 'localVisualizer', '#007bff');
+
+  console.log("Creating SDP offer...");
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  console.log("Posting offer to the OpenAI realtime endpoint...");
+  const sdpResponse = await fetch(
+    "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+    {
+      method: "POST",
+      body: offer.sdp,
+      headers: {
+        Authorization: `Bearer ${EPHEMERAL_KEY}`,
+        "Content-Type": "application/sdp"
+      }
+    }
+  );
+  if (!sdpResponse.ok) {
+    throw new Error(`Failed to get SDP answer. HTTP status ${sdpResponse.status}`);
+  }
+  console.log("Applying SDP answer from OpenAI...");
+  const answer = { type: "answer", sdp: await sdpResponse.text() };
+  await pc.setRemoteDescription(answer);
+  console.log("WebRTC connection established successfully!");
+  alert("AI Bot is now active and listening.");
+}
+
+    // Simple audio visualizer for local and remote audio streams
+    function startVisualizer(stream, canvasId, color) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      function draw() {
+        requestAnimationFrame(draw);
+        analyser.getByteTimeDomainData(dataArray);
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        const sliceWidth = canvas.width / dataArray.length;
+        let x = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = dataArray[i] / 128.0;
+          const y = v * canvas.height / 2;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+      }
+      draw();
+    }
+
+    // Manager Instruction: capture spoken input and update AI prompt
+    async function listenAndSendToGPT() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('SpeechRecognition not supported in this browser.');
+        return;
+      }
+      const recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.start();
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log("Manager's voice instruction recognized:", transcript);
+        try {
+          const saveResponse = await fetch('/save_and_update_prompt', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ refined_text: transcript })
+          });
+          if (!saveResponse.ok) {
+            throw new Error(`Failed to save instructions. HTTP ${saveResponse.status}`);
+          }
+          alert("Refined data saved and AI Prompt updated!");
+        } catch (error) {
+          console.error('Error saving refined instruction:', error);
+        }
+      };
+      recognition.onerror = (err) => {
+        console.error('Speech recognition error:', err);
+      };
+    }
+  </script>
+</body>
+</html>

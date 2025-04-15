@@ -1,0 +1,232 @@
+import psycopg2
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+import os
+import httpx
+from flask import Flask, render_template, jsonify, request
+
+
+app = Flask(__name__)
+app.secret_key = "SUPER_SECRET_KEY"
+PROMPT_FILE = "prompt_instruction.txt"
+
+# Toggle test mode: set to False if you have realtime endpoint access.
+USE_TEST_SESSION = True
+
+
+# DB config
+DB_HOST = "localhost"
+DB_NAME = "Vape_Pharm"
+DB_USER = "postgres"
+DB_PASS = "postgres"
+DB_PORT = 5432
+
+def get_db_connection():
+    return psycopg2.connect(
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS,
+        port=DB_PORT
+    )
+
+@app.route('/')
+def index():
+    return redirect(url_for('home') if 'user_id' in session else 'login')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if 'user_id' in session:
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+
+        if password != confirm_password:
+            flash("Passwords do not match.", "error")
+            return render_template('register.html')
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+            if cur.fetchone():
+                flash("Email already registered.", "error")
+                return render_template('register.html')
+
+            cur.execute("INSERT INTO users (email, username, password) VALUES (%s, %s, %s)",
+                        (email, username, password))
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            flash("Registration successful! You can now log in.", "success")
+            return redirect(url_for('login'))
+
+        except Exception as e:
+            print("Error:", e)
+            flash("Server error. Try again.", "error")
+            return render_template('register.html')
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT id, username, password FROM users WHERE email = %s", (email,))
+            user = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            if user:
+                user_id, username, db_password = user
+                if password == db_password:
+                    session['user_id'] = user_id
+                    session['username'] = username
+                    flash("Login successful!", "success")
+                    return redirect(url_for('home'))
+                else:
+                    flash("Invalid password.", "error")
+            else:
+                flash("No account found. Please register.", "error")
+                return redirect(url_for('login.html'))
+
+        except Exception as e:
+            print("Login error:", e)
+            flash("Server error. Try again.", "error")
+
+    return render_template('login.html')
+
+@app.route('/home')
+def home():
+    if 'user_id' not in session:
+        flash("Please log in first.", "error")
+        return redirect(url_for('login'))
+
+    return render_template('home.html', username=session.get('username', 'User'))
+@app.route('/projects')
+def projects():
+    if 'user_id' not in session:
+        flash("Please log in first.", "error")
+        return redirect(url_for('login'))
+    return render_template('projects.html', username=session.get('username'))
+
+@app.route('/settings')
+def settings():
+    if 'user_id' not in session:
+        flash("Please log in first.", "error")
+        return redirect(url_for('login'))
+    return render_template('settings.html', username=session.get('username'))
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash("Logged out successfully.", "info")
+    return redirect(url_for('login'))
+
+
+
+@app.route("/session", methods=["GET"])
+def session_endpoint():
+    # In test mode, return a dummy session response
+    """ if USE_TEST_SESSION:
+        print("Using test session mode. Returning dummy ephemeral key.")
+        return jsonify({"client_secret": {"value": "TEST_EPHEMERAL_KEY"}}) """
+
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    if not openai_api_key:
+        return jsonify({"error": "OPENAI_API_KEY not set"}), 500
+
+    # Build the prompt instructions
+    prompt_instructions = (
+        "You are a persuasive and helpful vape shop employee. "
+        "You also answer for all India products. "
+        "You speak in Arabic with a friendly, respectful tone and as a female representative. "
+        "Teach the client how to use the product, and when appropriate, ask if they would like to place an order or reserve it. "
+        "Do not refer to any hardcoded inventory; rely on your existing knowledge base when helping the customer."
+    )
+    if os.path.exists(PROMPT_FILE):
+        with open(PROMPT_FILE, "r") as file:
+            historical_instructions = file.read().strip()
+            if historical_instructions:
+                prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
+    print("Using prompt instructions:", prompt_instructions)
+
+    with httpx.Client() as client:
+        response = client.post(
+            "https://api.openai.com/v1/realtime/sessions",
+            headers={
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-realtime-preview-2024-12-17",
+                "voice": "verse",
+                "instructions": prompt_instructions,
+                "input_audio_transcription": {"model": "whisper-1"},
+                "turn_detection": {"type": "server_vad"}
+            },
+        )
+        print("OpenAI realtime response status:", response.status_code)
+        try:
+            response_json = response.json()
+        except Exception as e:
+            print("Error parsing JSON:", e)
+            return jsonify({"error": "Invalid response from OpenAI"}), 500
+
+        print("OpenAI realtime response:", response_json)
+        if not response_json.get("client_secret", {}).get("value"):
+            print("Error: No client_secret.value found in the /session response.")
+            return jsonify({"error": "No client_secret.value found in the /session response."}), 500
+        return jsonify(response_json)
+
+@app.route("/save_and_update_prompt", methods=["POST"])
+def save_and_update_prompt():
+    refined_text = request.json.get("refined_text")
+    if refined_text:
+        with open("refined_data.txt", "a") as file:
+            file.write(refined_text + "\n")
+        with open(PROMPT_FILE, "a") as prompt_file:
+            prompt_file.write(refined_text + "\n")
+        return jsonify({"status": "success", "message": "Prompt updated."})
+    return jsonify({"status": "failed", "message": "No text received."}), 400
+
+@app.route("/history", methods=["GET"])
+def history():
+    refined_history = ""
+    if os.path.exists("refined_data.txt"):
+        with open("refined_data.txt", "r") as f:
+            refined_history = f.read()
+    prompt_history = ""
+    if os.path.exists(PROMPT_FILE):
+        with open(PROMPT_FILE, "r") as f:
+            prompt_history = f.read()
+    return jsonify({
+        "prompt_history": prompt_history,
+        "refined_history": refined_history
+    })
+
+@app.route("/reset_prompt", methods=["POST"])
+def reset_prompt():
+    if os.path.exists(PROMPT_FILE):
+        os.remove(PROMPT_FILE)
+    if os.path.exists("refined_data.txt"):
+        os.remove("refined_data.txt")
+    return jsonify({"status": "success", "message": "Prompt instructions and refined history cleared."})
+
+
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
