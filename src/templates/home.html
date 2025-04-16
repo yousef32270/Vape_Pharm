@@ -277,30 +277,26 @@
     alert("AI Bot Stopped and connection closed.");
   });
 
-  document.getElementById("showHistoryButton").addEventListener("click", async () => {
-    try {
-      const historyResponse = await fetch("/history");
-      if (!historyResponse.ok) {
-        throw new Error(`Failed to retrieve history. HTTP ${historyResponse.status}`);
-      }
-      const historyData = await historyResponse.json();
-      alert(`Prompt History:\n${historyData.prompt_history}\n\nRefined History:\n${historyData.refined_history}`);
-    } catch (error) {
-      console.error("Error retrieving history:", error);
-    }
+  document.getElementById("showHistoryButton").addEventListener("click", () => {
+    window.location.href = "/history";
   });
 
   document.getElementById("clearHistoryButton").addEventListener("click", async () => {
     try {
-      const clearResponse = await fetch("/reset_prompt", { method: 'POST' });
+      const clearResponse = await fetch("/reset_prompt", { method: "POST" });
       if (!clearResponse.ok) {
         throw new Error(`Failed to clear history. HTTP ${clearResponse.status}`);
       }
-      alert("Prompt instructions and refined history cleared.");
+
+      const result = await clearResponse.json();
+      showDivineMessage("🧼 Prompt and history cleared successfully!", "success");
     } catch (error) {
       console.error("Error clearing history:", error);
+      showDivineMessage("❌ Failed to clear prompt/history", "danger");
     }
   });
+
+
 
   async function init() {
     console.log("Init started...");
@@ -389,36 +385,87 @@
     }
     draw();
   }
-
-  async function listenAndSendToGPT() {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('SpeechRecognition not supported in this browser.');
-      return;
-    }
-    const recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
-    recognition.lang = 'en-US';
-    recognition.start();
-    recognition.onresult = async (event) => {
-      const transcript = event.results[0][0].transcript;
-      console.log("Manager's voice instruction recognized:", transcript);
-      try {
-        const saveResponse = await fetch('/save_and_update_prompt', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ refined_text: transcript })
-        });
-        if (!saveResponse.ok) {
-          throw new Error(`Failed to save instructions. HTTP ${saveResponse.status}`);
-        }
-        alert("Refined data saved and AI Prompt updated!");
-      } catch (error) {
-        console.error('Error saving refined instruction:', error);
+    async function listenAndSendToGPT() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('SpeechRecognition not supported in this browser.');
+        return;
       }
-    };
-    recognition.onerror = (err) => {
-      console.error('Speech recognition error:', err);
-    };
-  }
+      const recognition = new (window.webkitSpeechRecognition || window.SpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.start();
+      recognition.onresult = async (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log("Manager's voice instruction recognized:", transcript);
+        try {
+          const saveResponse = await fetch('/save_and_update_prompt', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ refined_text: transcript })
+          });
+          if (!saveResponse.ok) {
+            throw new Error(`Failed to save instructions. HTTP ${saveResponse.status}`);
+          }
+
+          // 🔄 New elegant success box
+          const oldAlert = document.getElementById("instructionSuccess");
+          if (oldAlert) oldAlert.remove();
+
+          const successDiv = document.createElement("div");
+          successDiv.id = "instructionSuccess";
+          successDiv.className = "alert alert-success mt-4";
+          successDiv.style.maxWidth = "600px";
+          successDiv.innerHTML = "✅ Refined data saved and AI Prompt updated!";
+
+          document.querySelector(".glass-card").appendChild(successDiv);
+
+          setTimeout(() => {
+            successDiv.remove();
+          }, 5000);
+          
+        } catch (error) {
+          console.error('Error saving refined instruction:', error);
+        }
+      };
+      recognition.onerror = (err) => {
+        console.error('Speech recognition error:', err);
+      };
+    }
+    function showDivineMessage(message, type = "success", timeout = 4000) {
+      const oldAlert = document.getElementById("divineAlert");
+      if (oldAlert) oldAlert.remove();
+
+      const alertDiv = document.createElement("div");
+      alertDiv.id = "divineAlert";
+      alertDiv.className = `alert alert-${type}`;
+      alertDiv.style.position = "fixed";
+      alertDiv.style.top = "30px";
+      alertDiv.style.left = "50%";
+      alertDiv.style.transform = "translateX(-50%)";
+      alertDiv.style.zIndex = "9999";
+      alertDiv.style.padding = "16px 30px";
+      alertDiv.style.fontSize = "1.1rem";
+      alertDiv.style.fontWeight = "600";
+      alertDiv.style.color = "#000";
+      alertDiv.style.background = type === "success"
+        ? "linear-gradient(to right, #d9c37d, #bfa15f)"
+        : type === "danger"
+        ? "#f44336"
+        : "#ffc107";
+      alertDiv.style.border = "1px solid rgba(255,255,255,0.2)";
+      alertDiv.style.borderRadius = "12px";
+      alertDiv.style.boxShadow = "0 0 40px rgba(191, 161, 95, 0.5)";
+      alertDiv.style.transition = "opacity 1s ease";
+
+      alertDiv.textContent = message;
+      document.body.appendChild(alertDiv);
+
+      setTimeout(() => {
+        alertDiv.style.opacity = "0";
+        setTimeout(() => alertDiv.remove(), 1000);
+      }, timeout);
+    }
+
+
 </script>
 </body>
 </html>

@@ -136,19 +136,13 @@ def logout():
     return redirect(url_for('login'))
 
 
+from flask import render_template
 
 @app.route("/session", methods=["GET"])
 def session_endpoint():
-    # In test mode, return a dummy session response
-    """ if USE_TEST_SESSION:
-        print("Using test session mode. Returning dummy ephemeral key.")
-        return jsonify({"client_secret": {"value": "TEST_EPHEMERAL_KEY"}}) """
-
-    openai_api_key = os.environ.get("OPENAI_API_KEY")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
     if not openai_api_key:
-        return jsonify({"error": "OPENAI_API_KEY not set"}), 500
-
-    # Build the prompt instructions
+        return render_template("session_result.html", error="OPENAI_API_KEY not set")
     prompt_instructions = (
         "You are a persuasive and helpful vape shop employee. "
         "You also answer for all India products. "
@@ -157,11 +151,10 @@ def session_endpoint():
         "Do not refer to any hardcoded inventory; rely on your existing knowledge base when helping the customer."
     )
     if os.path.exists(PROMPT_FILE):
-        with open(PROMPT_FILE, "r") as file:
-            historical_instructions = file.read().strip()
-            if historical_instructions:
-                prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
-    print("Using prompt instructions:", prompt_instructions)
+            with open(PROMPT_FILE, "r") as file:
+                historical_instructions = file.read().strip()
+                if historical_instructions:
+                    prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
 
     with httpx.Client() as client:
         response = client.post(
@@ -178,19 +171,17 @@ def session_endpoint():
                 "turn_detection": {"type": "server_vad"}
             },
         )
-        print("OpenAI realtime response status:", response.status_code)
+
         try:
             response_json = response.json()
         except Exception as e:
-            print("Error parsing JSON:", e)
-            return jsonify({"error": "Invalid response from OpenAI"}), 500
+            return render_template("session_result.html", error="Invalid response from OpenAI")
 
-        print("OpenAI realtime response:", response_json)
-        if not response_json.get("client_secret", {}).get("value"):
-            print("Error: No client_secret.value found in the /session response.")
-            return jsonify({"error": "No client_secret.value found in the /session response."}), 500
-        return jsonify(response_json)
+        client_secret_value = response_json.get("client_secret", {}).get("value")
+        if not client_secret_value:
+            return render_template("session_result.html", error="No client_secret.value found in response.")
 
+        return render_template("session_result.html", token=client_secret_value)
 @app.route("/save_and_update_prompt", methods=["POST"])
 def save_and_update_prompt():
     refined_text = request.json.get("refined_text")
@@ -201,6 +192,7 @@ def save_and_update_prompt():
             prompt_file.write(refined_text + "\n")
         return jsonify({"status": "success", "message": "Prompt updated."})
     return jsonify({"status": "failed", "message": "No text received."}), 400
+from flask import render_template, request
 
 @app.route("/history", methods=["GET"])
 def history():
@@ -208,24 +200,33 @@ def history():
     if os.path.exists("refined_data.txt"):
         with open("refined_data.txt", "r") as f:
             refined_history = f.read()
+
     prompt_history = ""
     if os.path.exists(PROMPT_FILE):
         with open(PROMPT_FILE, "r") as f:
             prompt_history = f.read()
-    return jsonify({
-        "prompt_history": prompt_history,
-        "refined_history": refined_history
-    })
+
+    return render_template("history.html", refined_history=refined_history, prompt_history=prompt_history)
+
 
 @app.route("/reset_prompt", methods=["POST"])
 def reset_prompt():
+    prompt_deleted = False
+    refined_deleted = False
+
     if os.path.exists(PROMPT_FILE):
         os.remove(PROMPT_FILE)
+        prompt_deleted = True
     if os.path.exists("refined_data.txt"):
         os.remove("refined_data.txt")
-    return jsonify({"status": "success", "message": "Prompt instructions and refined history cleared."})
+        refined_deleted = True
 
-
+    return jsonify({
+        "status": "success",
+        "message": "Prompt instructions and refined history cleared.",
+        "prompt_deleted": prompt_deleted,
+        "refined_deleted": refined_deleted
+    })
 
 
 if __name__ == '__main__':

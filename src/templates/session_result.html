@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="main-content">
+  <div class="glass-card">
+    <div class="rotating-crown"></div>
+    <h1 class="header">Session Status</h1>
+    {% if error %}
+      <div class="alert alert-danger" role="alert">
+        🚫 {{ error }}
+      </div>
+    {% else %}
+      <div class="alert alert-success" role="alert">
+        ✅ Session started successfully!<br>
+        <strong>Client Secret:</strong> <code>{{ token }}</code>
+      </div>
+      <button class="btn btn-god" onclick="copyToken()">Copy Token</button>
+    {% endif %}
+  </div>
+</main>
+
+<script>
+  function copyToken() {
+    const codeElement = document.querySelector("code");
+    if (codeElement) {
+      navigator.clipboard.writeText(codeElement.textContent).then(() => {
+        alert("Token copied to clipboard!");
+      });
+    }
+  }
+  function showDivineMessage(message, type = "success", timeout = 4000) {
+  const oldAlert = document.getElementById("divineAlert");
+  if (oldAlert) oldAlert.remove();
+
+  const alertDiv = document.createElement("div");
+  alertDiv.id = "divineAlert";
+  alertDiv.className = `alert alert-${type}`;
+  alertDiv.style.position = "fixed";
+  alertDiv.style.top = "30px";
+  alertDiv.style.left = "50%";
+  alertDiv.style.transform = "translateX(-50%)";
+  alertDiv.style.zIndex = "9999";
+  alertDiv.style.padding = "16px 30px";
+  alertDiv.style.fontSize = "1.1rem";
+  alertDiv.style.fontWeight = "600";
+  alertDiv.style.color = "#000";
+  alertDiv.style.background = type === "success"
+    ? "linear-gradient(to right, #d9c37d, #bfa15f)"
+    : type === "danger"
+    ? "#f44336"
+    : "#ffc107";
+  alertDiv.style.border = "1px solid rgba(255,255,255,0.2)";
+  alertDiv.style.borderRadius = "12px";
+  alertDiv.style.boxShadow = "0 0 40px rgba(191, 161, 95, 0.5)";
+  alertDiv.style.transition = "opacity 1s ease";
+
+  alertDiv.textContent = message;
+  document.body.appendChild(alertDiv);
+
+  setTimeout(() => {
+    alertDiv.style.opacity = "0";
+    setTimeout(() => alertDiv.remove(), 1000);
+  }, timeout);
+}
+
+</script>
+{% endblock %}
