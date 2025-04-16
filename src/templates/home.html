@@ -296,62 +296,71 @@
     }
   });
 
-
-
   async function init() {
-    console.log("Init started...");
+  try {
+    console.log("🟡 Init started...");
     const tokenResponse = await fetch("/session");
-    if (!tokenResponse.ok) {
-      throw new Error(`Failed to get session token. HTTP status ${tokenResponse.status}`);
+
+    const contentType = tokenResponse.headers.get("content-type") || "";
+    if (!tokenResponse.ok || !contentType.includes("application/json")) {
+      throw new Error("Expected JSON response but got something else.");
     }
-    const tokenData = await tokenResponse.json();
 
-    const EPHEMERAL_KEY = tokenData.client_secret.value;
-    console.log("EPHEMERAL_KEY------", EPHEMERAL_KEY);
+      const tokenData = await tokenResponse.json();
+      const EPHEMERAL_KEY = tokenData.client_secret.value;
+      console.log("✅ EPHEMERAL_KEY:", EPHEMERAL_KEY);
 
-    pc = new RTCPeerConnection();
-    const audioEl = document.createElement("audio");
-    audioEl.autoplay = true;
-    document.body.appendChild(audioEl);
+      // Setup Peer Connection
+      pc = new RTCPeerConnection();
+      const audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+      document.body.appendChild(audioEl);
 
-    pc.ontrack = e => {
-      if (e.streams[0]) {
-        console.log("Received remote stream from OpenAI.");
-        audioEl.srcObject = e.streams[0];
-        startVisualizer(e.streams[0], 'backendVisualizer', '#ff0000');
-      }
-    };
-
-    console.log("Requesting microphone permission...");
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    pc.addTrack(micStream.getTracks()[0]);
-    console.log("Microphone acquired.");
-    startVisualizer(micStream, 'localVisualizer', '#007bff');
-
-    console.log("Creating SDP offer...");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    console.log("Posting offer to the OpenAI realtime endpoint...");
-    const sdpResponse = await fetch(
-      "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
-      {
-        method: "POST",
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${EPHEMERAL_KEY}`,
-          "Content-Type": "application/sdp"
+      pc.ontrack = (e) => {
+        if (e.streams[0]) {
+          console.log("🎧 Received remote stream from OpenAI.");
+          audioEl.srcObject = e.streams[0];
+          startVisualizer(e.streams[0], 'backendVisualizer', '#ff0000');
         }
+      };
+
+      console.log("🎙️ Requesting microphone permission...");
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      pc.addTrack(micStream.getTracks()[0]);
+      console.log("✅ Microphone acquired.");
+      startVisualizer(micStream, 'localVisualizer', '#007bff');
+
+      console.log("🛠️ Creating SDP offer...");
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log("📡 Sending offer to OpenAI...");
+      const sdpResponse = await fetch(
+        "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+        {
+          method: "POST",
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${EPHEMERAL_KEY}`,
+            "Content-Type": "application/sdp"
+          }
+        }
+      );
+
+      if (!sdpResponse.ok) {
+        throw new Error(`❌ Failed to get SDP answer. HTTP ${sdpResponse.status}`);
       }
-    );
-    if (!sdpResponse.ok) {
-      throw new Error(`Failed to get SDP answer. HTTP status ${sdpResponse.status}`);
+
+      const answer = { type: "answer", sdp: await sdpResponse.text() };
+      await pc.setRemoteDescription(answer);
+
+      console.log("✅ WebRTC connection established!");
+      showDivineMessage("✨ AI Bot is now active and listening!", "success");
+
+    } catch (error) {
+      console.error("❌ Error in init():", error);
+      showDivineMessage(`❌ Error: ${error.message}`, "danger");
     }
-    console.log("Applying SDP answer from OpenAI...");
-    const answer = { type: "answer", sdp: await sdpResponse.text() };
-    await pc.setRemoteDescription(answer);
-    console.log("WebRTC connection established successfully!");
-    alert("AI Bot is now active and listening.");
   }
 
   function startVisualizer(stream, canvasId, color) {

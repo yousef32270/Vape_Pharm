@@ -135,14 +135,12 @@ def logout():
     flash("Logged out successfully.", "info")
     return redirect(url_for('login'))
 
-
-from flask import render_template
-
 @app.route("/session", methods=["GET"])
 def session_endpoint():
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
     if not openai_api_key:
-        return render_template("session_result.html", error="OPENAI_API_KEY not set")
+        return jsonify({"error": "OPENAI_API_KEY not set"}), 500
+
     prompt_instructions = (
         "You are a persuasive and helpful vape shop employee. "
         "You also answer for all India products. "
@@ -150,11 +148,12 @@ def session_endpoint():
         "Teach the client how to use the product, and when appropriate, ask if they would like to place an order or reserve it. "
         "Do not refer to any hardcoded inventory; rely on your existing knowledge base when helping the customer."
     )
+
     if os.path.exists(PROMPT_FILE):
-            with open(PROMPT_FILE, "r") as file:
-                historical_instructions = file.read().strip()
-                if historical_instructions:
-                    prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
+        with open(PROMPT_FILE, "r") as file:
+            historical_instructions = file.read().strip()
+            if historical_instructions:
+                prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
 
     with httpx.Client() as client:
         response = client.post(
@@ -175,13 +174,14 @@ def session_endpoint():
         try:
             response_json = response.json()
         except Exception as e:
-            return render_template("session_result.html", error="Invalid response from OpenAI")
+            print("Error parsing JSON:", e)
+            return jsonify({"error": "Invalid response from OpenAI"}), 500
 
-        client_secret_value = response_json.get("client_secret", {}).get("value")
-        if not client_secret_value:
-            return render_template("session_result.html", error="No client_secret.value found in response.")
+        client_secret = response_json.get("client_secret", {}).get("value")
+        if not client_secret:
+            return jsonify({"error": "No client_secret.value found in the /session response."}), 500
 
-        return render_template("session_result.html", token=client_secret_value)
+        return jsonify({"client_secret": {"value": client_secret}})
 @app.route("/save_and_update_prompt", methods=["POST"])
 def save_and_update_prompt():
     refined_text = request.json.get("refined_text")
