@@ -1,24 +1,27 @@
-import psycopg2
-from flask import Flask, render_template, request, redirect, url_for, flash, session
 import os
+from dotenv import load_dotenv
+import psycopg2
 import httpx
-from flask import Flask, render_template, jsonify, request
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, flash, session, jsonify
+)
 
+# ─── Load Environment Variables ───────────────────────────────────────────────
+load_dotenv()
 
+# ─── App Configuration ────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = "SUPER_SECRET_KEY"
-PROMPT_FILE = "prompt_instruction.txt"
+app.secret_key    = os.environ["SUPER_SECRET_KEY"]
+PROMPT_FILE      = os.environ["PROMPT_FILE"]
+USE_TEST_SESSION = os.environ["USE_TEST_SESSION"].lower() in ("true", "1", "yes")
 
-# Toggle test mode: set to False if you have realtime endpoint access.
-USE_TEST_SESSION = True
-
-
-# DB config
-DB_HOST = "localhost"
-DB_NAME = "Vape_Pharm"
-DB_USER = "postgres"
-DB_PASS = "postgres"
-DB_PORT = 5432
+# ─── Database Configuration ───────────────────────────────────────────────────
+DB_HOST = os.environ["DB_HOST"]
+DB_NAME = os.environ["DB_NAME"]
+DB_USER = os.environ["DB_USER"]
+DB_PASS = os.environ["DB_PASS"]
+DB_PORT = int(os.environ["DB_PORT"])
 
 def get_db_connection():
     return psycopg2.connect(
@@ -29,9 +32,12 @@ def get_db_connection():
         port=DB_PORT
     )
 
+
+# --- Authentication Routes ---
 @app.route('/')
 def index():
     return redirect(url_for('home') if 'user_id' in session else 'login')
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -51,13 +57,16 @@ def register():
         try:
             conn = get_db_connection()
             cur = conn.cursor()
+
             cur.execute("SELECT id FROM users WHERE email = %s", (email,))
             if cur.fetchone():
                 flash("Email already registered.", "error")
                 return render_template('register.html')
 
-            cur.execute("INSERT INTO users (email, username, password) VALUES (%s, %s, %s)",
-                        (email, username, password))
+            cur.execute(
+                "INSERT INTO users (email, username, password) VALUES (%s, %s, %s)",
+                (email, username, password)
+            )
             conn.commit()
             cur.close()
             conn.close()
@@ -68,9 +77,9 @@ def register():
         except Exception as e:
             print("Error:", e)
             flash("Server error. Try again.", "error")
-            return render_template('register.html')
 
     return render_template('register.html')
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -84,6 +93,7 @@ def login():
         try:
             conn = get_db_connection()
             cur = conn.cursor()
+
             cur.execute("SELECT id, username, password FROM users WHERE email = %s", (email,))
             user = cur.fetchone()
             cur.close()
@@ -100,7 +110,6 @@ def login():
                     flash("Invalid password.", "error")
             else:
                 flash("No account found. Please register.", "error")
-                return redirect(url_for('login.html'))
 
         except Exception as e:
             print("Login error:", e)
@@ -108,19 +117,30 @@ def login():
 
     return render_template('login.html')
 
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash("Logged out successfully.", "info")
+    return redirect(url_for('login'))
+
+
+# --- Main Pages ---
 @app.route('/home')
 def home():
     if 'user_id' not in session:
         flash("Please log in first.", "error")
         return redirect(url_for('login'))
-
     return render_template('home.html', username=session.get('username', 'User'))
+
+
 @app.route('/projects')
 def projects():
     if 'user_id' not in session:
         flash("Please log in first.", "error")
         return redirect(url_for('login'))
     return render_template('projects.html', username=session.get('username'))
+
 
 @app.route('/settings')
 def settings():
@@ -129,12 +149,8 @@ def settings():
         return redirect(url_for('login'))
     return render_template('settings.html', username=session.get('username'))
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    flash("Logged out successfully.", "info")
-    return redirect(url_for('login'))
 
+# --- OpenAI Session Integration ---
 @app.route("/session", methods=["GET"])
 def session_endpoint():
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -151,9 +167,9 @@ def session_endpoint():
 
     if os.path.exists(PROMPT_FILE):
         with open(PROMPT_FILE, "r") as file:
-            historical_instructions = file.read().strip()
-            if historical_instructions:
-                prompt_instructions += f"\n\nManager's Instructions:\n{historical_instructions}"
+            historical = file.read().strip()
+            if historical:
+                prompt_instructions += f"\n\nManager's Instructions:\n{historical}"
 
     with httpx.Client() as client:
         response = client.post(
@@ -182,6 +198,9 @@ def session_endpoint():
             return jsonify({"error": "No client_secret.value found in the /session response."}), 500
 
         return jsonify({"client_secret": {"value": client_secret}})
+
+
+# --- Prompt Management ---
 @app.route("/save_and_update_prompt", methods=["POST"])
 def save_and_update_prompt():
     refined_text = request.json.get("refined_text")
@@ -191,8 +210,9 @@ def save_and_update_prompt():
         with open(PROMPT_FILE, "a") as prompt_file:
             prompt_file.write(refined_text + "\n")
         return jsonify({"status": "success", "message": "Prompt updated."})
+
     return jsonify({"status": "failed", "message": "No text received."}), 400
-from flask import render_template, request
+
 
 @app.route("/history", methods=["GET"])
 def history():
@@ -217,6 +237,7 @@ def reset_prompt():
     if os.path.exists(PROMPT_FILE):
         os.remove(PROMPT_FILE)
         prompt_deleted = True
+
     if os.path.exists("refined_data.txt"):
         os.remove("refined_data.txt")
         refined_deleted = True
@@ -229,5 +250,6 @@ def reset_prompt():
     })
 
 
+# --- Run App ---
 if __name__ == '__main__':
     app.run(debug=True)
